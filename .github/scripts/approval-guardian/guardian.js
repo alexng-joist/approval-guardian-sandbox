@@ -155,7 +155,7 @@ async function publish({ api, decision, outcome, links }) {
   return { id: created.id, fingerprint, action: 'created' };
 }
 
-const shouldComment = (decision) => decision.lostApproval && decision.verdict !== 'NO_ACTION';
+const shouldComment = (decision) => decision.reason !== 'CLOSED';
 
 async function withdrawStale({ botApi, decision }) {
   if (!decision.staleGuardianReview || !botApi) return;
@@ -204,7 +204,31 @@ async function runGuardian({ makeApi, botApi, git, config, links, number, log })
   const children = pull.state === 'open' || pull.merged_at ? await api.listChildren(pull.head.ref) : [];
   const dispatched = children.map((child) => child.number).filter((n) => n !== number);
   for (const child of dispatched) await api.dispatchGuardian(child, config.defaultBranch);
-  return { ...result, dispatched };
+  const summary = summaryMarkdown({ ...result, dispatched }, links);
+  await api.createCheckRun(checkRun(result, summary, links));
+  return { ...result, dispatched, summary };
+}
+
+const CHECK_SUMMARY_LIMIT = 65000;
+
+function checkConclusion({ decision, outcome }) {
+  if (outcome.action === 'approved') return 'success';
+  if (decision.verdict === 'NO_ACTION') return 'skipped';
+  return 'neutral';
+}
+
+function checkRun({ decision, outcome }, summary, links) {
+  return {
+    name: 'Approval Guardian',
+    head_sha: decision.snapshot.head,
+    status: 'completed',
+    conclusion: checkConclusion({ decision, outcome }),
+    details_url: links.runUrl,
+    output: {
+      title: `${decision.verdict}${decision.reason ? ` (${decision.reason})` : ''} → ${outcome.action}`,
+      summary: summary.slice(0, CHECK_SUMMARY_LIMIT),
+    },
+  };
 }
 
 module.exports = async ({ github, context, core, fetch }) => {
@@ -237,13 +261,14 @@ module.exports = async ({ github, context, core, fetch }) => {
     repo: `${owner}/${repo}`,
     runUrl: `${context.serverUrl}/${owner}/${repo}/actions/runs/${context.runId}`,
     commentLogin: 'github-actions[bot]',
+    shadow: config.enforce.size === 0,
   };
   const botApi = env.GUARDIAN_BOT_TOKEN
     ? createBotApi({ token: env.GUARDIAN_BOT_TOKEN, apiUrl: context.apiUrl, owner, repo, fetch })
     : null;
   const makeApi = () => createApi(github, { owner, repo });
-  const result = await runGuardian({ makeApi, botApi, git, config, links, number, log: core.info });
-  await core.summary.addRaw(summaryMarkdown(result, links)).write();
+  const { summary } = await runGuardian({ makeApi, botApi, git, config, links, number, log: core.info });
+  await core.summary.addRaw(summary).write();
 };
 
 module.exports.evaluate = evaluate;

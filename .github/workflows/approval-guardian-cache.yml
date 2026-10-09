@@ -1,0 +1,41 @@
+# Builds the Approval Guardian syntax checker on the default branch and saves
+# it to the Actions cache. "Approval Guardian" runs from workflow_run, whose
+# token cannot write caches, so it only restores the build saved here. The
+# path and key must stay identical to its "Restore syntax checker build" step.
+name: Approval Guardian Cache
+
+on:
+  push:
+    paths:
+      - .github/scripts/approval-guardian/swift-syntax-rules/**
+  schedule:
+    - cron: "17 3 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    if: github.event_name == 'schedule' || github.ref_name == github.event.repository.default_branch
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out syntax checker
+        uses: actions/checkout@v5
+        with:
+          sparse-checkout: .github/scripts/approval-guardian/swift-syntax-rules
+          persist-credentials: false
+
+      - name: Cache syntax checker build
+        id: cache
+        uses: actions/cache@v4
+        with:
+          path: .github/scripts/approval-guardian/swift-syntax-rules/.build
+          key: approval-guardian-swift-${{ runner.os }}-${{ hashFiles('.github/scripts/approval-guardian/swift-syntax-rules/Package.swift', '.github/scripts/approval-guardian/swift-syntax-rules/Package.resolved', '.github/scripts/approval-guardian/swift-syntax-rules/Sources/**') }}
+
+      - name: Build syntax checker
+        if: steps.cache.outputs.cache-hit != 'true'
+        working-directory: .github/scripts/approval-guardian/swift-syntax-rules
+        run: |
+          swift --version
+          swift build -c release --product swift-syntax-rules

@@ -88,7 +88,9 @@ function createApi(github, { owner, repo }) {
     owner, repo, workflow_id: 'approval-guardian.yml', ref, inputs: { pr_number: String(number) },
   });
 
-  return { dispatchGuardian, listRecentlyMerged, getPull, listReviews, getTimeline, getCodeowners, findPullsByHead, listChildren, listComments, createComment };
+  const createCheckRun = async (params) => (await github.rest.checks.create({ owner, repo, ...params })).data;
+
+  return { createCheckRun, dispatchGuardian, listRecentlyMerged, getPull, listReviews, getTimeline, getCodeowners, findPullsByHead, listChildren, listComments, createComment };
 }
 
 function createBotApi({ token, apiUrl, owner, repo, fetch }) {

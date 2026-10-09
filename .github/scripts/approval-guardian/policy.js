@@ -1,7 +1,7 @@
 'use strict';
 
 const GUARDIAN_REVIEW_PREFIX = 'Approval Guardian:';
-const MERGE_BASE_CHANGED_DISMISSAL = 'The merge-base changed after approval.';
+const INTEGRATION_DISMISSALS = new Set(['The merge-base changed after approval.', 'The base branch was changed.']);
 
 const PROTECTED_PATHS = [
   /^\.github\/CODEOWNERS$/,
@@ -38,7 +38,7 @@ function selectTrustRoot({ reviews, dismissals, owners, botLogin, headSha }) {
   );
   const staleApprovals = new Set(
     dismissals
-      .filter((d) => d.previousState === 'APPROVED' && (d.staleCommit || d.message === MERGE_BASE_CHANGED_DISMISSAL))
+      .filter((d) => d.previousState === 'APPROVED' && (d.staleCommit || INTEGRATION_DISMISSALS.has(d.message)))
       .map((d) => d.reviewId),
   );
 

@@ -46,8 +46,9 @@ function pathList(title, paths) {
   return [`**${title}**`, ...listed, ...more];
 }
 
-function evidenceLines(decision, { serverUrl, repo, runUrl }) {
+function reviewBody(decision, { serverUrl, repo, runUrl }) {
   return [
+    `Approval Guardian: ${decision.verdict}`,
     ...layerLines(decision, serverUrl, repo),
     `Old base: \`${short(decision.layers && decision.layers[0] && decision.layers[0].oldBase)}\` → Integrated base: \`${short(decision.newBase)}\``,
     `Target branch / tip: \`${decision.snapshot.baseRef}\` / \`${short(decision.snapshot.baseSha)}\``,
@@ -55,13 +56,6 @@ function evidenceLines(decision, { serverUrl, repo, runUrl }) {
     `Scope: ${scopeOf(decision)}`,
     `Rules: ${[POLICY_VERSION, ...(decision.rules || [])].join(', ')}`,
     `Evidence: ${runUrl}`,
-  ];
-}
-
-function reviewBody(decision, links) {
-  return [
-    `Approval Guardian: ${decision.verdict}`,
-    ...evidenceLines(decision, links),
     `Reason summary: ${decision.verdict === 'DET_GIT_PASS'
       ? 'the head tree equals the approved changes re-applied onto the integrated base'
       : 'both sides only added declarations that the listed syntax rules compose'}`,
@@ -73,37 +67,35 @@ function fingerprint(decision, outcome) {
   return crypto.createHash('sha256').update(key).digest('hex').slice(0, 16);
 }
 
-const OUTCOMES = {
-  approved: 'Approved this head on behalf of the continued human review.',
-  withdrawn: 'Approved, then withdrew the approval because the head or base changed during submission.',
-  superseded: 'The PR changed during evaluation; nothing was approved.',
-  observe: 'Observe-only: this verdict is not enforced, so nothing was approved.',
-  none: 'A code owner needs to review this PR.',
+const PASSES = {
+  DET_GIT_PASS: 'This commit only integrates the approved changes.',
+  DET_SYNTAX_PASS: 'This commit only integrates the approved changes; the conflict resolution only adds declarations.',
 };
+
+function headline(decision) {
+  if (PASSES[decision.verdict]) return { status: '✅ Pass', line: PASSES[decision.verdict] };
+  if (decision.verdict === 'NO_ACTION') return { status: '✅ No action needed', line: 'A code owner approval is still active.' };
+  return { status: '👀 Needs human review', line: REASONS[decision.reason] || REASONS.ERROR };
+}
+
+const FEEDBACK = 'Code owners: react 👍 if this verdict for this commit is right or 👎 if it is wrong. Reactions are collected to evaluate the guardian; later commits get their own comment.';
+const SHADOW = 'Shadow run: the guardian does not approve or block anything yet.';
 
 function commentBody(decision, outcome, links) {
   const fp = fingerprint(decision, outcome);
   const { pr, head } = decision.snapshot;
   const commit = `[\`${short(head)}\`](${links.serverUrl}/${links.repo}/pull/${pr}/commits/${head})`;
-  const lines = [MARKER, `<!-- approval-guardian:fp=${fp} -->`, `### Approval Guardian: ${decision.verdict} for ${commit}`, ''];
-  if (decision.verdict === 'HUMAN') {
-    lines.push(`**${REASONS[decision.reason] || decision.reason}**`);
-    if (decision.detail) lines.push('', `> \`${String(decision.detail).replace(/[`\n]/g, ' ')}\``);
-    lines.push('');
-  }
-  lines.push(OUTCOMES[outcome.action] + (outcome.note ? ` (${outcome.note})` : ''), '');
-  lines.push(...evidenceLines(decision, links).map((line) => `- ${line}`));
-  const conflictPaths = decision.conflicts ? decision.conflicts.paths : [];
-  const unexplained = (decision.residual || []).filter((p) => !conflictPaths.includes(p));
-  if (decision.verdict === 'HUMAN') {
-    lines.push('', ...pathList('Conflicted paths', conflictPaths), ...pathList('Other paths that differ from the expected tree', unexplained));
-  }
-  lines.push('', FEEDBACK);
-  return { body: lines.join('\n'), fingerprint: fp };
+  const { status, line } = headline(decision);
+  const body = [
+    MARKER,
+    `<!-- approval-guardian:fp=${fp} -->`,
+    `### Approval Guardian${links.shadow ? ' (shadow)' : ''}: ${status} for ${commit}`,
+    `${line} [Details](${links.runUrl})`,
+    '',
+    `_${links.shadow ? `${SHADOW} ` : ''}${FEEDBACK}_`,
+  ];
+  return { body: body.join('\n'), fingerprint: fp };
 }
-
-const FEEDBACK = 'Code owners: react 👍 if this verdict for this commit is right or 👎 if it is wrong. Reactions are collected to evaluate the guardian; later commits get their own comment.';
-
 
 function summaryMarkdown({ decision, outcome, comment, attempts, trigger, dispatched }, { serverUrl, repo }) {
   const { snapshot } = decision;
@@ -116,6 +108,8 @@ function summaryMarkdown({ decision, outcome, comment, attempts, trigger, dispat
     ['Trigger', trigger || 'n/a'],
     ['Head', `\`${snapshot.head}\``],
     ['Target', `\`${snapshot.baseRef}\` @ \`${short(snapshot.baseSha)}\``],
+    ['Old base → integrated base', `\`${short(decision.layers && decision.layers[0] && decision.layers[0].oldBase)}\` → \`${short(decision.newBase)}\``],
+    ['Rules', [POLICY_VERSION, ...(decision.rules || [])].join(', ')],
     ['Comment', comment ? `[${comment.action}](${prUrl}#issuecomment-${comment.id})` : 'none'],
     ['Children dispatched', dispatched && dispatched.length ? dispatched.map((n) => `#${n}`).join(', ') : 'none'],
   ];

@@ -13,6 +13,10 @@ on:
       title:
         required: true
         type: string
+      body:
+        required: false
+        default: sandbox scenario
+        type: string
 
 permissions:
   pull-requests: write
@@ -28,4 +32,5 @@ jobs:
           HEAD: ${{ inputs.head }}
           BASE: ${{ inputs.base }}
           TITLE: ${{ inputs.title }}
-        run: gh pr create -R "$GITHUB_REPOSITORY" --head "$HEAD" --base "$BASE" --title "$TITLE" --body "sandbox scenario"
+          BODY: ${{ inputs.body }}
+        run: gh pr create -R "$GITHUB_REPOSITORY" --head "$HEAD" --base "$BASE" --title "$TITLE" --body "$BODY"
