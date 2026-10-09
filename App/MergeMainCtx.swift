@@ -1,6 +1,6 @@
 let mergeMainCtx1 = 0
 let mergeMainCtx2 = 0
-let mergeMainCtx3 = 0
+let mergeMainCtx3 = 3
 let mergeMainCtx4 = 0
 let mergeMainCtx5 = 0
 let mergeMainCtx6 = 0
