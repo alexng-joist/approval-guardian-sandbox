@@ -1,7 +1,7 @@
 struct FollowupResolution {
     let foo: Int
 
-    init(foo: Int, bar: Int) {
+    init(foo: Int, bar: Int, baz: Int) {
         self.foo = foo
     }
 }
