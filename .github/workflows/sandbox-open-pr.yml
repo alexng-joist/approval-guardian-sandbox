@@ -1,0 +1,31 @@
+name: Sandbox Open PR
+
+on:
+  workflow_dispatch:
+    inputs:
+      head:
+        required: true
+        type: string
+      base:
+        required: false
+        default: main
+        type: string
+      title:
+        required: true
+        type: string
+
+permissions:
+  pull-requests: write
+  contents: read
+
+jobs:
+  open:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Open pull request
+        env:
+          GH_TOKEN: ${{ github.token }}
+          HEAD: ${{ inputs.head }}
+          BASE: ${{ inputs.base }}
+          TITLE: ${{ inputs.title }}
+        run: gh pr create -R "$GITHUB_REPOSITORY" --head "$HEAD" --base "$BASE" --title "$TITLE" --body "sandbox scenario"

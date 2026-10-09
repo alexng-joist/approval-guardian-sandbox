@@ -1,0 +1,138 @@
+# Restores lost code owner approval after integration-only pushes (rebase,
+# restack, retarget) when Git or a versioned syntax rule shows the head still
+# equals the human-approved changes. Runs only default-branch code; the trigger
+# artifact contributes nothing but a PR number and an action label kept in the
+# evidence, and every fact is re-read from the API.
+#
+# Configuration:
+#   vars.APPROVAL_GUARDIAN_ENFORCE    comma list of verdicts allowed to approve,
+#                                     e.g. "DET_GIT_PASS,swift-import-additions@1".
+#                                     A syntax pass approves only when every rule
+#                                     it used is listed. Empty = observe-only
+#                                     (kill switch). Rules: swift-import-additions@1,
+#                                     swift-enum-case-additions@1,
+#                                     swift-parameter-additions@1,
+#                                     swift-member-additions@1,
+#                                     swift-stored-property-additions@1,
+#                                     swift-switch-case-additions@1.
+#   vars.APPROVAL_GUARDIAN_BOT_LOGIN  machine user login (a CODEOWNER).
+#   secrets.APPROVAL_GUARDIAN_BOT_TOKEN  machine user token, stored in the
+#                                     "approval-guardian" environment restricted
+#                                     to the default branch.
+name: Approval Guardian
+
+on:
+  workflow_run:
+    workflows: ["Approval Guardian Trigger"]
+    types: [completed]
+  workflow_dispatch:
+    inputs:
+      pr_number:
+        description: Pull request number to re-evaluate
+        required: true
+        type: number
+
+permissions:
+  actions: write
+  contents: read
+  issues: write
+  pull-requests: write
+
+jobs:
+  resolve:
+    if: github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-latest
+    outputs:
+      pr-number: ${{ steps.pr.outputs.number }}
+      trigger: ${{ steps.pr.outputs.trigger }}
+    steps:
+      - name: Download trigger
+        if: github.event_name == 'workflow_run'
+        uses: actions/download-artifact@v4
+        with:
+          name: approval-guardian-trigger
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          repository: ${{ github.repository }}
+          run-id: ${{ github.event.workflow_run.id }}
+          path: ${{ runner.temp }}/approval-guardian-trigger
+
+      - name: Read pull request number
+        id: pr
+        env:
+          INPUT_PR_NUMBER: ${{ inputs.pr_number }}
+          SOURCE_EVENT: ${{ github.event.workflow_run.event }}
+        run: |
+          if [ -n "$INPUT_PR_NUMBER" ]; then
+            number="$INPUT_PR_NUMBER"
+            trigger="workflow_dispatch"
+          else
+            number="$(cat "$RUNNER_TEMP/approval-guardian-trigger/pr-number")"
+            action="$(head -c 40 "$RUNNER_TEMP/approval-guardian-trigger/action" 2>/dev/null || true)"
+            case "$action" in
+              *[!a-z_]*) action="unknown" ;;
+            esac
+            trigger="$SOURCE_EVENT:$action"
+          fi
+          case "$number" in
+            ''|*[!0-9]*) echo "invalid pull request number: $number" >&2; exit 1 ;;
+          esac
+          echo "number=$number" >> "$GITHUB_OUTPUT"
+          echo "trigger=$trigger" >> "$GITHUB_OUTPUT"
+
+  guard:
+    needs: resolve
+    runs-on: ubuntu-latest
+    environment: approval-guardian
+    concurrency:
+      group: approval-guardian-pr-${{ needs.resolve.outputs.pr-number }}
+      cancel-in-progress: false
+    steps:
+      - name: Check out guardian scripts
+        uses: actions/checkout@v5
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          sparse-checkout: .github/scripts/approval-guardian
+          persist-credentials: false
+
+      - name: Restore syntax checker build
+        uses: actions/cache@v4
+        with:
+          path: .github/scripts/approval-guardian/swift-syntax-rules/.build
+          key: approval-guardian-swift-${{ runner.os }}-${{ hashFiles('.github/scripts/approval-guardian/swift-syntax-rules/Package.swift', '.github/scripts/approval-guardian/swift-syntax-rules/Package.resolved', '.github/scripts/approval-guardian/swift-syntax-rules/Sources/**') }}
+
+      - name: Build syntax checker
+        id: checker
+        continue-on-error: true
+        working-directory: .github/scripts/approval-guardian/swift-syntax-rules
+        run: |
+          swift --version
+          swift build -c release --product swift-syntax-rules
+          echo "path=$(swift build -c release --show-bin-path)/swift-syntax-rules" >> "$GITHUB_OUTPUT"
+
+      - name: Evaluate pull request
+        uses: actions/github-script@v7
+        env:
+          GUARDIAN_PR_NUMBER: ${{ needs.resolve.outputs.pr-number }}
+          GUARDIAN_TRIGGER: ${{ needs.resolve.outputs.trigger }}
+          GUARDIAN_DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+          GUARDIAN_ENFORCE: ${{ vars.APPROVAL_GUARDIAN_ENFORCE }}
+          GUARDIAN_BOT_LOGIN: ${{ vars.APPROVAL_GUARDIAN_BOT_LOGIN }}
+          GUARDIAN_BOT_TOKEN: ${{ secrets.APPROVAL_GUARDIAN_BOT_TOKEN }}
+          GUARDIAN_FETCH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GUARDIAN_SWIFT_CHECKER: ${{ steps.checker.outputs.path }}
+          GUARDIAN_GIT_DIR: ${{ runner.temp }}/approval-guardian.git
+          GUARDIAN_EVIDENCE_DIR: ${{ runner.temp }}/approval-guardian-evidence
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const run = require(`${process.env.GITHUB_WORKSPACE}/.github/scripts/approval-guardian/guardian.js`);
+            await run({ github, context, core, fetch });
+
+      - name: Upload evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: approval-guardian-evidence-pr${{ needs.resolve.outputs.pr-number }}-${{ github.run_id }}
+          path: ${{ runner.temp }}/approval-guardian-evidence
+          if-no-files-found: ignore
+          retention-days: 90

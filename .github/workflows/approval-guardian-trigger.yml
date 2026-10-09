@@ -1,0 +1,34 @@
+# Records which pull request changed so "Approval Guardian" can evaluate it
+# from the default branch. This workflow holds no secrets: pull_request_review
+# runs the PR's own copy of it, and pull_request_target runs the base branch's.
+name: Approval Guardian Trigger
+
+on:
+  pull_request_target:
+    types: [synchronize, reopened, edited, closed]
+  pull_request_review:
+    types: [submitted]
+
+permissions: {}
+
+jobs:
+  record:
+    if: github.event.action != 'edited' || github.event.changes.base != null
+    runs-on: ubuntu-latest
+    steps:
+      - name: Record pull request number and action
+        env:
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          ACTION: ${{ github.event.action }}
+        run: |
+          mkdir -p "$RUNNER_TEMP/approval-guardian-trigger"
+          printf '%s' "$PR_NUMBER" > "$RUNNER_TEMP/approval-guardian-trigger/pr-number"
+          printf '%s' "$ACTION" > "$RUNNER_TEMP/approval-guardian-trigger/action"
+
+      - name: Upload trigger
+        uses: actions/upload-artifact@v4
+        with:
+          name: approval-guardian-trigger
+          path: ${{ runner.temp }}/approval-guardian-trigger/
+          if-no-files-found: error
+          retention-days: 1
