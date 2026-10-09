@@ -1,7 +1,8 @@
 struct UnsafeConfig {
     let foo: Int
 
-    init(foo: Int, baz: Int, qux: Int) {
+    init(foo: Int, bar: Int, baz: Int, qux: Int) {
         self.foo = foo
+        print("config init")
     }
 }
