@@ -1,5 +1,5 @@
 struct ShipmentTracker {
     let status: ShipmentStatus
 
-    var isDelivered: Bool { status == .shipped }
+    var isInTransit: Bool { status == .shipped }
 }
