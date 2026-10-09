@@ -1,7 +1,7 @@
 struct SyntaxInitParams {
     let foo: Int
 
-    init(foo: Int, baz: Int) {
+    init(foo: Int, bar: Int, baz: Int) {
         self.foo = foo
     }
 }
