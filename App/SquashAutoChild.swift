@@ -1,0 +1,1 @@
+let squashAutoChild = 1
