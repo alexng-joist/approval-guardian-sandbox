@@ -20,6 +20,7 @@ async function evaluate({ api, git, config, number }) {
   let lostApproval = false;
   const done = (result) => ({ ...result, lostApproval, snapshot, policy: POLICY_VERSION });
   if (pull.state !== 'open') return done({ verdict: 'NO_ACTION', reason: 'CLOSED' });
+  if (pull.draft) return done({ verdict: 'NO_ACTION', reason: 'DRAFT' });
 
   const codeowners = parseCodeowners(await api.getCodeowners(config.defaultBranch));
   if (!codeowners.supported) return done(human('UNSUPPORTED_CODEOWNERS', codeowners.reason));
@@ -155,7 +156,7 @@ async function publish({ api, decision, outcome, links }) {
   return { id: created.id, fingerprint, action: 'created' };
 }
 
-const shouldComment = (decision) => decision.reason !== 'CLOSED';
+const shouldComment = (decision) => decision.lostApproval && decision.verdict !== 'NO_ACTION';
 
 async function withdrawStale({ botApi, decision }) {
   if (!decision.staleGuardianReview || !botApi) return;

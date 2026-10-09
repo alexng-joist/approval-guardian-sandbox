@@ -5,7 +5,7 @@ name: Approval Guardian Trigger
 
 on:
   pull_request_target:
-    types: [synchronize, reopened, edited, closed]
+    types: [synchronize, reopened, edited, closed, ready_for_review]
   pull_request_review:
     types: [submitted]
 

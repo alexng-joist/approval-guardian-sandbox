@@ -74,7 +74,6 @@ const PASSES = {
 
 function headline(decision) {
   if (PASSES[decision.verdict]) return { status: '✅ Pass', line: PASSES[decision.verdict] };
-  if (decision.verdict === 'NO_ACTION') return { status: '✅ No action needed', line: 'A code owner approval is still active.' };
   return { status: '👀 Needs human review', line: REASONS[decision.reason] || REASONS.ERROR };
 }
 

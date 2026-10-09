@@ -6,6 +6,7 @@ const path = require('node:path');
 const slimPull = (p) => ({
   number: p.number,
   state: p.state,
+  draft: p.draft,
   created_at: p.created_at,
   updated_at: p.updated_at,
   closed_at: p.closed_at,
