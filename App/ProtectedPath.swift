@@ -1,1 +1,1 @@
-let protectedPath = 1
+let protectedPath = 2
