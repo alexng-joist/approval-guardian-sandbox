@@ -1,0 +1,1 @@
+let squashAutoParentFeature = 1
