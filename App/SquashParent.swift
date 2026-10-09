@@ -1,1 +1,1 @@
-let squashParent = 1
+let squashParent = 2
