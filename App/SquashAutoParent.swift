@@ -1,1 +1,1 @@
-let squashAutoParent = 1
+let squashAutoParent = 2
