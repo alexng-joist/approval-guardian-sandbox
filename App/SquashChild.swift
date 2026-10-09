@@ -1,0 +1,1 @@
+let squashChild = 1
