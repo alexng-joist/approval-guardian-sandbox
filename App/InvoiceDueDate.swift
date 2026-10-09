@@ -7,7 +7,8 @@ struct Invoice {
 
 enum InvoiceDueDate {
     static func dueDate(for invoice: Invoice, calendar: Calendar = .current) -> Date {
-        let days = invoice.paymentTermsDays
-        return calendar.date(byAdding: .day, value: days, to: invoice.issuedAt) ?? invoice.issuedAt
+        let termDays = invoice.paymentTermsDays
+        let issueDay = calendar.startOfDay(for: invoice.issuedAt)
+        return calendar.date(byAdding: .day, value: termDays, to: issueDay) ?? issueDay
     }
 }
