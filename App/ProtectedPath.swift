@@ -1,0 +1,1 @@
+let protectedPath = 1
