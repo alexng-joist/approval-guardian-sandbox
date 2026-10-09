@@ -1,0 +1,1 @@
+let squashParentFeature = 1
