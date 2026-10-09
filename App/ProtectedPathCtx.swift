@@ -1,6 +1,6 @@
 let protectedPathCtx1 = 0
 let protectedPathCtx2 = 0
-let protectedPathCtx3 = 0
+let protectedPathCtx3 = 3
 let protectedPathCtx4 = 0
 let protectedPathCtx5 = 5
 let protectedPathCtx6 = 0
