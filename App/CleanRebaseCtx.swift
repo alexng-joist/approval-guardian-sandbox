@@ -1,6 +1,6 @@
 let cleanRebaseCtx1 = 0
 let cleanRebaseCtx2 = 0
-let cleanRebaseCtx3 = 0
+let cleanRebaseCtx3 = 3
 let cleanRebaseCtx4 = 0
 let cleanRebaseCtx5 = 5
 let cleanRebaseCtx6 = 0
