@@ -24,6 +24,13 @@ const slimReview = (r) => ({
   body: r.body,
 });
 
+const slimComment = (c) => ({
+  id: c.id,
+  user: c.user && { login: c.user.login },
+  created_at: c.created_at,
+  body: (c.body || '').split('\n').filter((line) => line.startsWith('<!-- approval-guardian')).join('\n'),
+});
+
 const RECORDED = {
   getPull: slimPull,
   listReviews: (reviews) => reviews.map(slimReview),
@@ -32,6 +39,9 @@ const RECORDED = {
   findPullsByHead: (pulls) => pulls.map(slimPull),
   listChildren: (pulls) => pulls.map(slimPull),
   listRecentlyMerged: (pulls) => pulls.map(slimPull),
+  listComments: (comments) => comments.map(slimComment),
+  listCheckRuns: (runs) => runs.map((r) => ({ name: r.name, status: r.status, conclusion: r.conclusion })),
+  listStatuses: (statuses) => statuses.map((st) => ({ context: st.context, state: st.state })),
 };
 
 function recordingApi(api, calls) {

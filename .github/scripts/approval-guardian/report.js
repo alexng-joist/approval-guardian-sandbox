@@ -88,6 +88,7 @@ function commentBody(decision, outcome, links) {
   const body = [
     MARKER,
     `<!-- approval-guardian:fp=${fp} -->`,
+    `<!-- approval-guardian:record root=${decision.rootReview} head=${head} verdict=${decision.verdict} reason=${decision.reason || ''} -->`,
     `### Approval Guardian${links.shadow ? ' (shadow)' : ''}: ${status} for ${commit}`,
     `${line} [Details](${links.runUrl})`,
     '',
@@ -129,4 +130,11 @@ function summaryMarkdown({ decision, outcome, comment, attempts, trigger, dispat
   return `${lines.join('\n')}\n`;
 }
 
-module.exports = { MARKER, POLICY_VERSION, commentBody, reviewBody, summaryMarkdown };
+const RECORD = /<!-- approval-guardian:record root=(\d+) head=([0-9a-f]{40}) verdict=([A-Z_]+) reason=([A-Z_]*) -->/;
+
+function readRecord(body) {
+  const match = RECORD.exec(body || '');
+  return match ? { root: Number(match[1]), head: match[2], verdict: match[3], reason: match[4] || null } : null;
+}
+
+module.exports = { MARKER, POLICY_VERSION, commentBody, readRecord, reviewBody, summaryMarkdown };

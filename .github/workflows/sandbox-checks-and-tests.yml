@@ -1,0 +1,23 @@
+name: Checks and Tests
+
+on:
+  push:
+    branches-ignore:
+      - main
+
+permissions: {}
+
+jobs:
+  checks:
+    name: Checks and Tests
+    runs-on: ubuntu-latest
+    steps:
+      - name: Simulate CI
+        env:
+          MESSAGE: ${{ github.event.head_commit.message }}
+        run: |
+          sleep 180
+          case "$MESSAGE" in
+            *"[ci-fail]"*) echo "simulated CI failure"; exit 1 ;;
+          esac
+          echo "simulated CI success"

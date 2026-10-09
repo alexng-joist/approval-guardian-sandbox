@@ -71,4 +71,31 @@ function botApprovedHead({ reviews, botLogin, headSha }) {
 
 const protectedPaths = (paths) => paths.filter((p) => PROTECTED_PATHS.some((re) => re.test(p)));
 
-module.exports = { GUARDIAN_REVIEW_PREFIX, parseCodeowners,isHumanCodeOwner, selectTrustRoot, botApprovedHead, protectedPaths };
+const PASS_VERDICTS = new Set(['DET_GIT_PASS', 'DET_SYNTAX_PASS']);
+const RETRYABLE_REASONS = new Set(['ERROR', 'GIT_ERROR', 'MISSING_OBJECT']);
+
+function approvalSpent({ records, rootReview, headSha }) {
+  const last = records.filter((r) => r.root === rootReview).pop();
+  if (!last || last.head === headSha) return false;
+  return !PASS_VERDICTS.has(last.verdict) && !RETRYABLE_REASONS.has(last.reason);
+}
+
+const OWN_CHECKS = new Set(['Approval Guardian', 'Approval Guardian Trigger']);
+const PASSED_CONCLUSIONS = new Set(['success', 'neutral', 'skipped']);
+
+function checksState({ checkRuns, statuses }) {
+  const runs = checkRuns.filter((run) => !OWN_CHECKS.has(run.name));
+  const pending = [
+    ...runs.filter((run) => run.status !== 'completed').map((run) => run.name),
+    ...statuses.filter((status) => status.state === 'pending').map((status) => status.context),
+  ];
+  const failed = [
+    ...runs.filter((run) => run.status === 'completed' && !PASSED_CONCLUSIONS.has(run.conclusion)).map((run) => run.name),
+    ...statuses.filter((status) => status.state === 'failure' || status.state === 'error').map((status) => status.context),
+  ];
+  return { pending, failed };
+}
+
+module.exports = {
+  GUARDIAN_REVIEW_PREFIX, parseCodeowners, isHumanCodeOwner, selectTrustRoot, botApprovedHead, protectedPaths, approvalSpent, checksState,
+};

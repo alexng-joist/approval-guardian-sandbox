@@ -13,6 +13,7 @@ permissions: {}
 
 jobs:
   record:
+    name: Approval Guardian Trigger
     if: github.event.action != 'edited' || github.event.changes.base != null
     runs-on: ubuntu-latest
     steps:

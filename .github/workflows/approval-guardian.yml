@@ -2,7 +2,9 @@
 # restack, retarget) when Git or a versioned syntax rule shows the head still
 # equals the human-approved changes. Runs only default-branch code; the trigger
 # artifact contributes nothing but a PR number and an action label kept in the
-# evidence, and every fact is re-read from the API.
+# evidence, and every fact is re-read from the API. It only evaluates once every
+# other check on the PR head has passed, so it also re-runs when the PR
+# workflows listed below complete.
 #
 # Configuration:
 #   vars.APPROVAL_GUARDIAN_ENFORCE    comma list of verdicts allowed to approve,
@@ -23,7 +25,12 @@ name: Approval Guardian
 
 on:
   workflow_run:
-    workflows: ["Approval Guardian Trigger"]
+    workflows:
+      - Approval Guardian Trigger
+      - Checks and Tests
+      - Check for JIRA Work Item Reference
+      - Claude PR Review
+      - iOS PR Reviewers Slack
     types: [completed]
   workflow_dispatch:
     inputs:
@@ -48,7 +55,7 @@ jobs:
       trigger: ${{ steps.pr.outputs.trigger }}
     steps:
       - name: Download trigger
-        if: github.event_name == 'workflow_run'
+        if: github.event.workflow_run.name == 'Approval Guardian Trigger'
         uses: actions/download-artifact@v4
         with:
           name: approval-guardian-trigger
@@ -62,10 +69,22 @@ jobs:
         env:
           INPUT_PR_NUMBER: ${{ inputs.pr_number }}
           SOURCE_EVENT: ${{ github.event.workflow_run.event }}
+          SOURCE_WORKFLOW: ${{ github.event.workflow_run.name }}
+          SOURCE_BRANCH: ${{ github.event.workflow_run.head_branch }}
+          SOURCE_SHA: ${{ github.event.workflow_run.head_sha }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           if [ -n "$INPUT_PR_NUMBER" ]; then
             number="$INPUT_PR_NUMBER"
             trigger="workflow_dispatch"
+          elif [ "$SOURCE_WORKFLOW" != "Approval Guardian Trigger" ]; then
+            number="$(gh api -X GET "repos/$GITHUB_REPOSITORY/pulls" -f state=open -f head="$GITHUB_REPOSITORY_OWNER:$SOURCE_BRANCH" \
+              --jq "map(select(.head.sha == \"$SOURCE_SHA\")) | .[0].number // empty")"
+            if [ -z "$number" ]; then
+              echo "no open pull request has head $SOURCE_SHA"
+              exit 0
+            fi
+            trigger="checks_completed"
           else
             number="$(cat "$RUNNER_TEMP/approval-guardian-trigger/pr-number")"
             action="$(head -c 40 "$RUNNER_TEMP/approval-guardian-trigger/action" 2>/dev/null || true)"
@@ -82,6 +101,7 @@ jobs:
 
   guard:
     needs: resolve
+    if: needs.resolve.outputs.pr-number != ''
     runs-on: ubuntu-latest
     environment: approval-guardian
     concurrency:

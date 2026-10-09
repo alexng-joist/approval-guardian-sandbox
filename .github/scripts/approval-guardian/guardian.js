@@ -2,11 +2,13 @@
 
 const { createGit } = require('./git.js');
 const { createApi, createBotApi } = require('./github-api.js');
-const { parseCodeowners, selectTrustRoot, botApprovedHead, protectedPaths } = require('./policy.js');
+const {
+  parseCodeowners, selectTrustRoot, botApprovedHead, protectedPaths, approvalSpent, checksState,
+} = require('./policy.js');
 const { buildLayers, Unresolvable } = require('./lineage.js');
 const { compare } = require('./compare.js');
 const { createChecker } = require('./syntax.js');
-const { MARKER, POLICY_VERSION, commentBody, reviewBody, summaryMarkdown } = require('./report.js');
+const { MARKER, POLICY_VERSION, commentBody, readRecord, reviewBody, summaryMarkdown } = require('./report.js');
 const { recordingApi, writeEvidence } = require('./evidence.js');
 
 const MAX_ATTEMPTS = 2;
@@ -17,8 +19,8 @@ async function evaluate({ api, git, config, number }) {
   const pull = await api.getPull(number, { fresh: true });
   const snapshot = { pr: number, head: pull.head.sha, baseRef: pull.base.ref, baseSha: pull.base.sha, reviews: [], related: [] };
   const loaded = new Map();
-  let lostApproval = false;
-  const done = (result) => ({ ...result, lostApproval, snapshot, policy: POLICY_VERSION });
+  let rootReview = null;
+  const done = (result) => ({ ...result, lostApproval: Boolean(rootReview), rootReview, snapshot, policy: POLICY_VERSION });
   if (pull.state !== 'open') return done({ verdict: 'NO_ACTION', reason: 'CLOSED' });
   if (pull.draft) return done({ verdict: 'NO_ACTION', reason: 'DRAFT' });
 
@@ -38,13 +40,23 @@ async function evaluate({ api, git, config, number }) {
   const top = await loadLayer(pull);
   snapshot.reviews = reviewStates(top.reviews);
   if (top.activeOnHead) return done({ verdict: 'NO_ACTION', reason: 'HUMAN_APPROVED' });
-  lostApproval = Boolean(top.root);
+  rootReview = top.root ? top.root.id : null;
   const guardianReview = botApprovedHead({ reviews: top.reviews, botLogin: config.botLogin, headSha: pull.head.sha });
   const retargeted = guardianReview
     && top.timeline.baseChanges.some((change) => Date.parse(change.at) > Date.parse(guardianReview.submitted_at));
   if (guardianReview && !retargeted) return done({ verdict: 'NO_ACTION', reason: 'GUARDIAN_APPROVED' });
   const stale = retargeted ? { staleGuardianReview: guardianReview.id } : {};
   const finish = (result) => done({ ...stale, ...result });
+  if (top.root) {
+    const records = (await api.listComments(number))
+      .filter((c) => c.user && c.user.login === config.commentLogin)
+      .map((c) => readRecord(c.body))
+      .filter(Boolean);
+    if (approvalSpent({ records, rootReview, headSha: pull.head.sha })) return finish({ verdict: 'NO_ACTION', reason: 'APPROVAL_SPENT' });
+    const checks = checksState({ checkRuns: await api.listCheckRuns(pull.head.sha), statuses: await api.listStatuses(pull.head.sha) });
+    if (checks.failed.length) return finish({ verdict: 'NO_ACTION', reason: 'CHECKS_FAILED', detail: checks.failed.join(', ') });
+    if (checks.pending.length) return finish({ verdict: 'NO_ACTION', reason: 'CHECKS_PENDING', detail: checks.pending.join(', ') });
+  }
   if (top.blocking) return finish(human('CHANGES_REQUESTED'));
   if (!top.root) return finish(human('NO_HUMAN_APPROVAL'));
 
@@ -147,16 +159,16 @@ async function enforce({ api, botApi, config, decision, links }) {
   return { action: 'approved', reviewId: review.id };
 }
 
-async function publish({ api, decision, outcome, links }) {
+async function publish({ api, decision, outcome, links, commentLogin }) {
   const { body, fingerprint } = commentBody(decision, outcome, links);
   const current = (await api.listComments(decision.snapshot.pr))
-    .find((c) => c.body && c.body.startsWith(MARKER) && c.user && c.user.login === links.commentLogin && c.body.includes(`fp=${fingerprint}`));
+    .find((c) => c.body && c.body.startsWith(MARKER) && c.user && c.user.login === commentLogin && c.body.includes(`fp=${fingerprint}`));
   if (current) return { id: current.id, fingerprint, action: 'unchanged' };
   const created = await api.createComment(decision.snapshot.pr, body);
   return { id: created.id, fingerprint, action: 'created' };
 }
 
-const shouldComment = (decision) => decision.lostApproval && decision.verdict !== 'NO_ACTION';
+const evaluated = (decision) => decision.lostApproval && decision.verdict !== 'NO_ACTION';
 
 async function withdrawStale({ botApi, decision }) {
   if (!decision.staleGuardianReview || !botApi) return;
@@ -185,9 +197,9 @@ async function guardPull({ makeApi, botApi, git, config, links, number, log }) {
   log(`#${number}: ${decision.verdict}${decision.reason ? ` (${decision.reason})` : ''} → ${outcome.action}`);
   let comment = null;
   try {
-    if (shouldComment(decision)) comment = await publish({ api, decision, outcome, links });
+    if (evaluated(decision)) comment = await publish({ api, decision, outcome, links, commentLogin: config.commentLogin });
   } finally {
-    if (decision.lostApproval) {
+    if (evaluated(decision)) {
       writeEvidence(config.evidenceDir, {
         decision, outcome, attempts, comment, trigger: config.trigger || null, inputs,
         versions: { policy: POLICY_VERSION, git: config.gitVersion, node: process.version },
@@ -256,12 +268,12 @@ module.exports = async ({ github, context, core, fetch }) => {
     evidenceDir: env.GUARDIAN_EVIDENCE_DIR,
     trigger: /^[a-z_]{1,40}(:[a-z_]{0,40})?$/.test(env.GUARDIAN_TRIGGER || '') ? env.GUARDIAN_TRIGGER : 'unknown',
     gitVersion,
+    commentLogin: 'github-actions[bot]',
   };
   const links = {
     serverUrl: context.serverUrl,
     repo: `${owner}/${repo}`,
     runUrl: `${context.serverUrl}/${owner}/${repo}/actions/runs/${context.runId}`,
-    commentLogin: 'github-actions[bot]',
     shadow: config.enforce.size === 0,
   };
   const botApi = env.GUARDIAN_BOT_TOKEN

@@ -82,6 +82,12 @@ function createApi(github, { owner, repo }) {
   const listComments = (number) =>
     github.paginate(github.rest.issues.listComments, { owner, repo, issue_number: number, per_page: 100 });
 
+  const listCheckRuns = (ref) =>
+    github.paginate(github.rest.checks.listForRef, { owner, repo, ref, per_page: 100 });
+
+  const listStatuses = async (ref) =>
+    (await github.rest.repos.getCombinedStatusForRef({ owner, repo, ref, per_page: 100 })).data.statuses;
+
   const createComment = async (number, body) => (await github.rest.issues.createComment({ owner, repo, issue_number: number, body })).data;
 
   const dispatchGuardian = (number, ref) => github.rest.actions.createWorkflowDispatch({
@@ -90,7 +96,10 @@ function createApi(github, { owner, repo }) {
 
   const createCheckRun = async (params) => (await github.rest.checks.create({ owner, repo, ...params })).data;
 
-  return { createCheckRun, dispatchGuardian, listRecentlyMerged, getPull, listReviews, getTimeline, getCodeowners, findPullsByHead, listChildren, listComments, createComment };
+  return {
+    createCheckRun, dispatchGuardian, listRecentlyMerged, getPull, listReviews, getTimeline, getCodeowners, findPullsByHead, listChildren,
+    listComments, createComment, listCheckRuns, listStatuses,
+  };
 }
 
 function createBotApi({ token, apiUrl, owner, repo, fetch }) {
